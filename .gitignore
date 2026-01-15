@@ -1,0 +1,31 @@
+# Build artifacts
+build/
+*.o
+*.so
+*.dll
+*.pyd
+*.egg-info/
+__pycache__/
+*.pyc
+
+# PyTorch JIT compilation cache
+torch_extensions/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Benchmark results (keep CSVs, ignore large files)
+benchmarks/results/*.png
+
+# OS
+Thumbs.db
+.DS_Store
+
+# CUDA profiling
+*.nsys-rep
+*.ncu-rep
+*.nvvp
+*.qdrep
