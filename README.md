@@ -11,3 +11,9 @@ A from-scratch CUDA implementation of Flash Attention 2, progressively optimized
 ## License
 
 MIT
+
+## Usage
+
+```bash
+python tests/test_forward.py
+```
