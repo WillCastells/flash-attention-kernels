@@ -119,7 +119,7 @@ torch::Tensor naive_attention(
 
     TORCH_CHECK(N <= 1024, "N must be <= 1024 for naive kernel (thread limit)");
 
-    float scale = 1.0f / static_cast<float>(d);
+    float scale = 1.0f / sqrtf(static_cast<float>(d));
 
     // Allocate full N×N attention matrix (this is what Flash Attention avoids)
     auto S = torch::empty({B, nh, N, N}, Q.options());
