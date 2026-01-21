@@ -14,6 +14,7 @@ def load_module():
         sources=[
             str(PROJ_ROOT / "csrc" / "bindings.cpp"),
             str(PROJ_ROOT / "csrc" / "v1_naive_attention.cu"),
+            str(PROJ_ROOT / "csrc" / "v2_flash_forward.cu"),
         ],
         extra_cuda_cflags=["-O3", "--use_fast_math"],
         verbose=True,
@@ -43,13 +44,27 @@ def main():
         V = torch.randn(B, nh, N, d, device="cuda", dtype=torch.float32)
         ref = reference_attention(Q, K, V)
 
+        # V1
+        if N <= 1024:
+            total_tests += 1
+            out_v1 = mod.naive_attention(Q, K, V)
+            err = (out_v1 - ref).abs().max().item()
+            ok = torch.allclose(out_v1, ref, atol=1e-3, rtol=1e-3)
+            print(f"  V1 naive:     max_err={err:.6f} [{'PASS' if ok else 'FAIL'}]")
+            if ok: total_passed += 1
+
+        # V2
         total_tests += 1
-        out = mod.naive_attention(Q, K, V)
-        err = (out - ref).abs().max().item()
-        ok = torch.allclose(out, ref, atol=1e-3, rtol=1e-3)
-        print(f"  V1 naive: max_err={err:.6f} [{'PASS' if ok else 'FAIL'}]")
-        if ok:
-            total_passed += 1
+        out_v2, L_v2 = mod.flash_forward(Q, K, V)
+        err = (out_v2 - ref).abs().max().item()
+        ok = torch.allclose(out_v2, ref, atol=1e-3, rtol=1e-3)
+        print(f"  V2 flash fwd: max_err={err:.6f} [{'PASS' if ok else 'FAIL'}]")
+        if ok: total_passed += 1
+
+        # Cross-version check
+        if N <= 1024:
+            ok_cross = torch.allclose(out_v1, out_v2, atol=1e-4, rtol=1e-3)
+            print(f"  V1 vs V2:     {'MATCH' if ok_cross else 'MISMATCH'}")
 
     print(f"\nTOTAL: {total_passed}/{total_tests} passed")
     sys.exit(0 if total_passed == total_tests else 1)
