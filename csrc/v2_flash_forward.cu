@@ -49,7 +49,7 @@ __global__ void flash_forward_kernel(
     }
 
     // Running statistics for online softmax (in registers)
-    float mi = 0.0f;  // running max
+    float mi = -INFINITY;  // running max
     float li = 0.0f;       // running sum of exp
 
     // Output accumulator (in registers)
