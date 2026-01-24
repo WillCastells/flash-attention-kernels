@@ -1,4 +1,4 @@
-"""Test forward pass correctness for Flash Attention kernels."""
+"""Test forward pass correctness for all Flash Attention kernel versions."""
 
 import sys
 import torch
@@ -21,52 +21,72 @@ def load_module():
     )
 
 def reference_attention(Q, K, V):
+    """PyTorch reference: scaled dot-product attention with causal mask."""
     return F.scaled_dot_product_attention(Q, K, V, is_causal=True)
 
+def test_config(mod, B, nh, N, d, label=""):
+    """Test all forward kernels against PyTorch reference for one config."""
+    print(f"\n{'='*60}")
+    print(f"Config: B={B}, nh={nh}, N={N}, d={d} {label}")
+    print(f"{'='*60}")
+
+    torch.manual_seed(42)
+    Q = torch.randn(B, nh, N, d, device="cuda", dtype=torch.float32)
+    K = torch.randn(B, nh, N, d, device="cuda", dtype=torch.float32)
+    V = torch.randn(B, nh, N, d, device="cuda", dtype=torch.float32)
+    ref = reference_attention(Q, K, V)
+
+    passed = 0
+    total = 0
+
+    # V1
+    if N <= 1024:
+        total += 1
+        out_v1 = mod.naive_attention(Q, K, V)
+        err = (out_v1 - ref).abs().max().item()
+        ok = torch.allclose(out_v1, ref, atol=1e-3, rtol=1e-3)
+        print(f"  V1 naive:      max_err={err:.6f}  [{'PASS' if ok else 'FAIL'}]")
+        if ok: passed += 1
+
+    # V2
+    total += 1
+    out_v2, L_v2 = mod.flash_forward(Q, K, V)
+    err = (out_v2 - ref).abs().max().item()
+    ok = torch.allclose(out_v2, ref, atol=1e-3, rtol=1e-3)
+    print(f"  V2 flash fwd:  max_err={err:.6f}  [{'PASS' if ok else 'FAIL'}]")
+    if ok: passed += 1
+
+    # Cross-version consistency
+    if N <= 1024:
+        ok_12 = torch.allclose(out_v1, out_v2, atol=1e-4, rtol=1e-3)
+        print(f"  V1 vs V2:      {'MATCH' if ok_12 else 'MISMATCH'}")
+
+    print(f"  Result: {passed}/{total} passed")
+    return passed, total
+
 def main():
-    print("Compiling CUDA kernels...")
+    print("Compiling CUDA kernels (first run may take a minute)...")
     mod = load_module()
     print("Compilation complete!\n")
 
     configs = [
         (1, 1, 64, 32, "tiny"),
         (2, 4, 128, 64, "small"),
+        (4, 8, 256, 64, "medium"),
     ]
 
     total_passed = 0
     total_tests = 0
 
     for B, nh, N, d, label in configs:
-        print(f"\nConfig: B={B}, nh={nh}, N={N}, d={d} {label}")
-        torch.manual_seed(42)
-        Q = torch.randn(B, nh, N, d, device="cuda", dtype=torch.float32)
-        K = torch.randn(B, nh, N, d, device="cuda", dtype=torch.float32)
-        V = torch.randn(B, nh, N, d, device="cuda", dtype=torch.float32)
-        ref = reference_attention(Q, K, V)
+        p, t = test_config(mod, B, nh, N, d, label)
+        total_passed += p
+        total_tests += t
 
-        # V1
-        if N <= 1024:
-            total_tests += 1
-            out_v1 = mod.naive_attention(Q, K, V)
-            err = (out_v1 - ref).abs().max().item()
-            ok = torch.allclose(out_v1, ref, atol=1e-3, rtol=1e-3)
-            print(f"  V1 naive:     max_err={err:.6f} [{'PASS' if ok else 'FAIL'}]")
-            if ok: total_passed += 1
+    print(f"\n{'='*60}")
+    print(f"TOTAL: {total_passed}/{total_tests} tests passed")
+    print(f"{'='*60}")
 
-        # V2
-        total_tests += 1
-        out_v2, L_v2 = mod.flash_forward(Q, K, V)
-        err = (out_v2 - ref).abs().max().item()
-        ok = torch.allclose(out_v2, ref, atol=1e-3, rtol=1e-3)
-        print(f"  V2 flash fwd: max_err={err:.6f} [{'PASS' if ok else 'FAIL'}]")
-        if ok: total_passed += 1
-
-        # Cross-version check
-        if N <= 1024:
-            ok_cross = torch.allclose(out_v1, out_v2, atol=1e-4, rtol=1e-3)
-            print(f"  V1 vs V2:     {'MATCH' if ok_cross else 'MISMATCH'}")
-
-    print(f"\nTOTAL: {total_passed}/{total_tests} passed")
     sys.exit(0 if total_passed == total_tests else 1)
 
 if __name__ == "__main__":
