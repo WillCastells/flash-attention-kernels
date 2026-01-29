@@ -261,7 +261,7 @@ std::vector<torch::Tensor> flash_backward(
 
     float scale = 1.0f / sqrtf(static_cast<float>(d));
 
-    auto dQ = torch::empty_like(Q);
+    auto dQ = torch::zeros_like(Q);  // zeros because of atomicAdd accumulation
     auto dK = torch::zeros_like(K);
     auto dV = torch::zeros_like(V);
 
