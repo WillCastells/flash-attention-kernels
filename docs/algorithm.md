@@ -40,6 +40,31 @@ After processing all blocks: `O = O / l`
 - Global memory: only O[N×d] and L[N] (logsumexp for backward)
 - **No N×N matrix stored** — O(N) memory instead of O(N²)
 
+## Flash Attention 2 Backward Pass
+
+The backward pass recomputes S and P on-the-fly using the stored logsumexp L, avoiding O(N²) memory for gradients too.
+
+### Gradient Formulas
+
+Given upstream gradient dO:
+
+```
+D[i] = sum_j(O[i,j] * dO[i,j])              # row-wise dot product
+P[i,j] = exp(Q[i] @ K[j]^T * scale - L[i])  # recomputed from L
+dS[i,j] = P[i,j] * (dO[i] @ V[j]^T - D[i])  # gradient of pre-softmax scores
+dV += P^T @ dO                                # gradient w.r.t. values
+dK += scale * dS^T @ Q                        # gradient w.r.t. keys
+dQ += scale * dS @ K                          # gradient w.r.t. queries
+```
+
+### Tiling Strategy (Backward)
+
+- **Outer loop** over K/V blocks (j): accumulates dKj, dVj in shared memory
+- **Inner loop** over Q blocks (i): recomputes P, computes dS
+- dQ uses atomicAdd to global memory (accumulated across j-blocks)
+- dK, dV are written once per j-block (no atomics needed)
+
+
 ## References
 
 - [FlashAttention: Fast and Memory-Efficient Exact Attention](https://arxiv.org/abs/2205.14135) (Dao et al., 2022)
