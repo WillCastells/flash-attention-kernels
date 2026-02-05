@@ -8,8 +8,16 @@ std::vector<torch::Tensor> flash_backward(
     torch::Tensor Q, torch::Tensor K, torch::Tensor V,
     torch::Tensor O, torch::Tensor dO, torch::Tensor L);
 
+std::vector<torch::Tensor> flash_forward_optimised(torch::Tensor Q, torch::Tensor K, torch::Tensor V);
+
+std::vector<torch::Tensor> flash_backward_optimised(
+    torch::Tensor Q, torch::Tensor K, torch::Tensor V,
+    torch::Tensor O, torch::Tensor dO, torch::Tensor L);
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    m.def("naive_attention", &naive_attention, "V1: Naive 3-pass attention");
-    m.def("flash_forward",   &flash_forward,   "V2: Flash Attention 2 forward");
-    m.def("flash_backward",  &flash_backward,  "V3: Flash Attention 2 backward");
+    m.def("naive_attention",          &naive_attention,          "V1: Naive 3-pass attention");
+    m.def("flash_forward",            &flash_forward,            "V2: Flash Attention 2 forward");
+    m.def("flash_backward",           &flash_backward,           "V3: Flash Attention 2 backward");
+    m.def("flash_forward_optimised",  &flash_forward_optimised,  "V4: Optimised Flash forward");
+    m.def("flash_backward_optimised", &flash_backward_optimised, "V4: Optimised Flash backward");
 }
