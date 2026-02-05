@@ -15,6 +15,8 @@ def load_module():
             str(PROJ_ROOT / "csrc" / "bindings.cpp"),
             str(PROJ_ROOT / "csrc" / "v1_naive_attention.cu"),
             str(PROJ_ROOT / "csrc" / "v2_flash_forward.cu"),
+            str(PROJ_ROOT / "csrc" / "v3_flash_backward.cu"),
+            str(PROJ_ROOT / "csrc" / "v4_flash_optimised.cu"),
         ],
         extra_cuda_cflags=["-O3", "--use_fast_math"],
         verbose=True,
@@ -55,6 +57,15 @@ def test_config(mod, B, nh, N, d, label=""):
     ok = torch.allclose(out_v2, ref, atol=1e-3, rtol=1e-3)
     print(f"  V2 flash fwd:  max_err={err:.6f}  [{'PASS' if ok else 'FAIL'}]")
     if ok: passed += 1
+
+    # V4
+    if d in (32, 64, 128):
+        total += 1
+        out_v4, L_v4 = mod.flash_forward_optimised(Q, K, V)
+        err = (out_v4 - ref).abs().max().item()
+        ok = torch.allclose(out_v4, ref, atol=1e-3, rtol=1e-3)
+        print(f"  V4 opt fwd:    max_err={err:.6f}  [{'PASS' if ok else 'FAIL'}]")
+        if ok: passed += 1
 
     # Cross-version consistency
     if N <= 1024:
