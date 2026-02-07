@@ -84,6 +84,7 @@ def main():
         (1, 1, 64, 32, "tiny"),
         (2, 4, 128, 64, "small"),
         (4, 8, 256, 64, "medium"),
+        (4, 8, 512, 64, "large"),
     ]
 
     total_passed = 0
