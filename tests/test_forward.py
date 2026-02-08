@@ -76,7 +76,7 @@ def test_config(mod, B, nh, N, d, label=""):
     return passed, total
 
 def main():
-    print("Compiling CUDA kernels (first run may take a minute)...")
+    print("Compiling CUDA kernels...")
     mod = load_module()
     print("Compilation complete!\n")
 
