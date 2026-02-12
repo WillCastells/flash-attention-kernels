@@ -114,7 +114,6 @@ def benchmark_forward(mod, configs):
 
         # V5: fp16 Tensor Core forward
         if d in (32, 64, 128):
-            print(f"  V5 fp16 TC fwd:  {avg_ms:8.3f} ms (min {min_ms:.3f})")
         else:
 
         rows.append(row)
@@ -169,7 +168,6 @@ def benchmark_backward(mod, configs):
 
         # V5: fp16 Tensor Core backward
         if d in (32, 64, 128):
-            print(f"  V5 fp16 TC bwd:  {avg_ms:8.3f} ms (min {min_ms:.3f})")
         else:
 
         rows.append(row)
@@ -191,6 +189,7 @@ def save_csv(rows, filename):
     print(f"\nSaved: {filepath}")
 
 
+def generate_charts():
     """Generate comparison charts from CSV results."""
     try:
         import matplotlib.pyplot as plt
@@ -285,6 +284,7 @@ def main():
     bwd_rows = benchmark_backward(mod, configs)
     save_csv(bwd_rows, "backward_benchmark.csv")
 
+    generate_charts()
 
     print("\nDone!")
 
