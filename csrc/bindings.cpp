@@ -1,5 +1,6 @@
 #include <torch/extension.h>
 
+// Forward declarations — defined in .cu files
 torch::Tensor naive_attention(torch::Tensor Q, torch::Tensor K, torch::Tensor V);
 
 std::vector<torch::Tensor> flash_forward(torch::Tensor Q, torch::Tensor K, torch::Tensor V);
@@ -14,10 +15,18 @@ std::vector<torch::Tensor> flash_backward_optimised(
     torch::Tensor Q, torch::Tensor K, torch::Tensor V,
     torch::Tensor O, torch::Tensor dO, torch::Tensor L);
 
+std::vector<torch::Tensor> flash_forward_fp16_tc(torch::Tensor Q, torch::Tensor K, torch::Tensor V);
+
+std::vector<torch::Tensor> flash_backward_fp16_tc(
+    torch::Tensor Q, torch::Tensor K, torch::Tensor V,
+    torch::Tensor O, torch::Tensor dO, torch::Tensor L);
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("naive_attention",          &naive_attention,          "V1: Naive 3-pass attention");
     m.def("flash_forward",            &flash_forward,            "V2: Flash Attention 2 forward");
     m.def("flash_backward",           &flash_backward,           "V3: Flash Attention 2 backward");
     m.def("flash_forward_optimised",  &flash_forward_optimised,  "V4: Optimised Flash forward");
     m.def("flash_backward_optimised", &flash_backward_optimised, "V4: Optimised Flash backward");
+    m.def("flash_forward_fp16_tc",    &flash_forward_fp16_tc,    "V5: fp16 Tensor Core forward");
+    m.def("flash_backward_fp16_tc",   &flash_backward_fp16_tc,   "V5: fp16 Tensor Core backward");
 }
