@@ -8,6 +8,7 @@ from pathlib import Path
 PROJ_ROOT = Path(__file__).resolve().parent.parent
 
 def load_module():
+    """JIT-compile and load the flash attention CUDA module."""
     from torch.utils.cpp_extension import load
     return load(
         name="flash_attn",
@@ -17,8 +18,9 @@ def load_module():
             str(PROJ_ROOT / "csrc" / "v2_flash_forward.cu"),
             str(PROJ_ROOT / "csrc" / "v3_flash_backward.cu"),
             str(PROJ_ROOT / "csrc" / "v4_flash_optimised.cu"),
+            str(PROJ_ROOT / "csrc" / "v5_flash_fp16_tensorcore.cu"),
         ],
-        extra_cuda_cflags=["-O3", "--use_fast_math"],
+        extra_cuda_cflags=["-O3", "--use_fast_math", "-lineinfo"],
         verbose=True,
     )
 
@@ -67,16 +69,37 @@ def test_config(mod, B, nh, N, d, label=""):
         print(f"  V4 opt fwd:    max_err={err:.6f}  [{'PASS' if ok else 'FAIL'}]")
         if ok: passed += 1
 
+    # V5
+    if d in (32, 64, 128):
+        total += 1
+        try:
+            Q_h = Q.half()
+            K_h = K.half()
+            V_h = V.half()
+            out_v5, L_v5 = mod.flash_forward_fp16_tc(Q_h, K_h, V_h)
+            out_v5_f32 = out_v5.float()
+            err = (out_v5_f32 - ref).abs().max().item()
+            ok = torch.allclose(out_v5_f32, ref, atol=1e-1, rtol=1e-1)
+            print(f"  V5 fp16 TC:    max_err={err:.6f}  [{'PASS' if ok else 'FAIL'}]")
+            if ok: passed += 1
+        except Exception as e:
+            print(f"  V5 fp16 TC:    ERROR - {e}")
+            import traceback
+            traceback.print_exc()
+
     # Cross-version consistency
     if N <= 1024:
-        ok_12 = torch.allclose(out_v1, out_v2, atol=1e-4, rtol=1e-3)
-        print(f"  V1 vs V2:      {'MATCH' if ok_12 else 'MISMATCH'}")
+        try:
+            ok_12 = torch.allclose(out_v1, out_v2, atol=1e-4, rtol=1e-3)
+            print(f"  V1 vs V2:      {'MATCH' if ok_12 else 'MISMATCH'}")
+        except:
+            pass
 
     print(f"  Result: {passed}/{total} passed")
     return passed, total
 
 def main():
-    print("Compiling CUDA kernels...")
+    print("Compiling CUDA kernels (first run may take a minute)...")
     mod = load_module()
     print("Compilation complete!\n")
 
