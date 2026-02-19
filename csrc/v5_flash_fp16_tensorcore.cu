@@ -180,7 +180,7 @@ __global__ void flash_forward_fp16tc_kernel(
                 row_max = fmaxf(row_max, S_smem[r * Bc + c]);
 
             float new_mi = fmaxf(old_mi, row_max);
-            float rescale = expf(new_mi - old_mi);
+            float rescale = expf(old_mi - new_mi);
 
             // Compute P values and row sum
             float row_sum = 0.0f;
