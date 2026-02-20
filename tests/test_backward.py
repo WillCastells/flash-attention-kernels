@@ -17,8 +17,9 @@ def load_module():
             str(PROJ_ROOT / "csrc" / "v2_flash_forward.cu"),
             str(PROJ_ROOT / "csrc" / "v3_flash_backward.cu"),
             str(PROJ_ROOT / "csrc" / "v4_flash_optimised.cu"),
+            str(PROJ_ROOT / "csrc" / "v5_flash_fp16_tensorcore.cu"),
         ],
-        extra_cuda_cflags=["-O3", "--use_fast_math"],
+        extra_cuda_cflags=["-O3", "--use_fast_math", "-lineinfo"],
         verbose=True,
     )
 
@@ -61,13 +62,10 @@ def test_backward_config(mod, B, nh, N, d, label=""):
         ok = (torch.allclose(dQ_v3, ref_dQ, atol=atol, rtol=rtol) and
               torch.allclose(dK_v3, ref_dK, atol=atol, rtol=rtol) and
               torch.allclose(dV_v3, ref_dV, atol=atol, rtol=rtol))
-        status = "PASS" if ok else "FAIL"
-        print(f"  V3 flash bwd:")
-        print(f"    dQ max_err={err_dQ:.6f}  dK max_err={err_dK:.6f}  dV max_err={err_dV:.6f}")
-        print(f"    [{status}]")
+        print(f"  V3 flash bwd:   [{'PASS' if ok else 'FAIL'}]  dQ={err_dQ:.6f} dK={err_dK:.6f} dV={err_dV:.6f}")
         if ok: passed += 1
     except Exception as e:
-        print(f"  V3 flash bwd: ERROR - {e}")
+        print(f"  V3 flash bwd:   ERROR - {e}")
 
     # V4
     if d in (32, 64, 128):
@@ -81,13 +79,36 @@ def test_backward_config(mod, B, nh, N, d, label=""):
             ok = (torch.allclose(dQ_v4, ref_dQ, atol=atol, rtol=rtol) and
                   torch.allclose(dK_v4, ref_dK, atol=atol, rtol=rtol) and
                   torch.allclose(dV_v4, ref_dV, atol=atol, rtol=rtol))
-            status = "PASS" if ok else "FAIL"
-            print(f"  V4 opt bwd:")
-            print(f"    dQ max_err={err_dQ:.6f}  dK max_err={err_dK:.6f}  dV max_err={err_dV:.6f}")
-            print(f"    [{status}]")
+            print(f"  V4 opt bwd:     [{'PASS' if ok else 'FAIL'}]  dQ={err_dQ:.6f} dK={err_dK:.6f} dV={err_dV:.6f}")
             if ok: passed += 1
         except Exception as e:
-            print(f"  V4 opt bwd: ERROR - {e}")
+            print(f"  V4 opt bwd:     ERROR - {e}")
+
+    # V5
+    if d in (32, 64, 128):
+        total += 1
+        try:
+            Q_h = Q.half()
+            K_h = K.half()
+            V_h = V.half()
+            dO_h = dO.half()
+            O_v5, L_v5 = mod.flash_forward_fp16_tc(Q_h, K_h, V_h)
+            dQ_v5, dK_v5, dV_v5 = mod.flash_backward_fp16_tc(Q_h, K_h, V_h, O_v5, dO_h, L_v5)
+            dQ_v5_f = dQ_v5.float()
+            dK_v5_f = dK_v5.float()
+            dV_v5_f = dV_v5.float()
+            err_dQ = (dQ_v5_f - ref_dQ).abs().max().item()
+            err_dK = (dK_v5_f - ref_dK).abs().max().item()
+            err_dV = (dV_v5_f - ref_dV).abs().max().item()
+            fp16_atol = 1e-1
+            fp16_rtol = 1e-1
+            ok = (torch.allclose(dQ_v5_f, ref_dQ, atol=fp16_atol, rtol=fp16_rtol) and
+                  torch.allclose(dK_v5_f, ref_dK, atol=fp16_atol, rtol=fp16_rtol) and
+                  torch.allclose(dV_v5_f, ref_dV, atol=fp16_atol, rtol=fp16_rtol))
+            print(f"  V5 fp16 TC bwd: [{'PASS' if ok else 'FAIL'}]  dQ={err_dQ:.6f} dK={err_dK:.6f} dV={err_dV:.6f}")
+            if ok: passed += 1
+        except Exception as e:
+            print(f"  V5 fp16 TC bwd: ERROR - {e}")
 
     print(f"  Result: {passed}/{total} passed")
     return passed, total
