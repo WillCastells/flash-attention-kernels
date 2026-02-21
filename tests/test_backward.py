@@ -1,4 +1,4 @@
-"""Test backward pass correctness for Flash Attention kernels."""
+"""Test backward pass correctness for Flash Attention V3/V4/V5 kernels."""
 
 import sys
 import torch
