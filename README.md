@@ -12,7 +12,7 @@ A from-scratch CUDA implementation of Flash Attention 2, progressively optimized
 
 - Python 3.10+
 - PyTorch 2.x with CUDA
-- NVIDIA GPU (SM 7.0+)
+- NVIDIA GPU (SM 7.0+, tested on RTX 2080)
 
 ## Usage
 
