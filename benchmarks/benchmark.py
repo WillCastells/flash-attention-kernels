@@ -114,7 +114,14 @@ def benchmark_forward(mod, configs):
 
         # V5: fp16 Tensor Core forward
         if d in (32, 64, 128):
+            Q_h = Q.half()
+            K_h = K.half()
+            V_h = V.half()
+            min_ms, avg_ms = cuda_timer(lambda: mod.flash_forward_fp16_tc(Q_h, K_h, V_h))
+            print(f"  V5 fp16 TC fwd:  {avg_ms:8.3f} ms (min {min_ms:.3f})")
+            row["v5_fp16tc_ms"] = f"{avg_ms:.3f}"
         else:
+            row["v5_fp16tc_ms"] = "N/A"
 
         rows.append(row)
 
@@ -168,7 +175,16 @@ def benchmark_backward(mod, configs):
 
         # V5: fp16 Tensor Core backward
         if d in (32, 64, 128):
+            Q_h = Q.half()
+            K_h = K.half()
+            V_h = V.half()
+            dO_h = dO.half()
+            O_v5, L_v5 = mod.flash_forward_fp16_tc(Q_h, K_h, V_h)
+            min_ms, avg_ms = cuda_timer(lambda: mod.flash_backward_fp16_tc(Q_h, K_h, V_h, O_v5, dO_h, L_v5))
+            print(f"  V5 fp16 TC bwd:  {avg_ms:8.3f} ms (min {min_ms:.3f})")
+            row["v5_fp16tc_bwd_ms"] = f"{avg_ms:.3f}"
         else:
+            row["v5_fp16tc_bwd_ms"] = "N/A"
 
         rows.append(row)
 
@@ -213,6 +229,7 @@ def generate_charts():
             ("v1_naive_ms", "V1 Naive"),
             ("v2_flash_ms", "V2 Flash"),
             ("v4_opt_ms", "V4 Optimised"),
+            ("v5_fp16tc_ms", "V5 fp16 TC"),
         ]):
             vals = []
             for r in rows:
@@ -245,6 +262,7 @@ def generate_charts():
             ("pytorch_bwd_ms", "PyTorch Backward"),
             ("v3_flash_bwd_ms", "V3 Flash Backward"),
             ("v4_opt_bwd_ms", "V4 Optimised Backward"),
+            ("v5_fp16tc_bwd_ms", "V5 fp16 TC Backward"),
         ]):
             vals = []
             for r in rows:
@@ -275,7 +293,7 @@ def main():
         (4, 8, 256, 64),
         (4, 8, 512, 64),
         (4, 8, 1024, 64),
-        # (4, 8, 2048, 64),  # TODO: add after V5
+        (4, 8, 2048, 64),
     ]
 
     fwd_rows = benchmark_forward(mod, configs)
