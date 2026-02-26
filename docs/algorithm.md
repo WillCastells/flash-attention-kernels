@@ -64,6 +64,13 @@ dQ += scale * dS @ K                          # gradient w.r.t. queries
 - dQ uses atomicAdd to global memory (accumulated across j-blocks)
 - dK, dV are written once per j-block (no atomics needed)
 
+## Optimizations (V4)
+
+1. **Register-tiled matmul**: Each thread computes multiple output elements using split-K dot products
+2. **Warp shuffle reductions**: Use `__shfl_xor_sync` for rowmax/rowsum across collaborating threads
+3. **float4 vectorized loads**: 128-bit memory transactions for global→register transfers
+4. **Split backward**: Separate dK/dV and dQ kernels eliminate all atomicAdd operations
+5. **Template parameters**: Compile-time tile sizes enable loop unrolling
 
 ## References
 
