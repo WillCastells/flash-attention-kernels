@@ -1,5 +1,7 @@
 # Flash Attention 2 in CUDA — From Scratch
 
+> V5 forward within 1.7x of PyTorch SDPA, backward within 1.7x of PyTorch autograd on H100. Full forward + backward pass with fp16 tensor cores — few open-source implementations include both.
+
 A from-scratch CUDA implementation of Flash Attention 2 with **forward AND backward pass**, progressively optimized from naive baseline to fp16 tensor core kernels.
 
 ## Kernel Versions
@@ -23,15 +25,15 @@ Most open-source Flash Attention implementations only cover the forward pass. Th
 
 ## Quick Start
 
-**Requirements**: Python 3.10+, PyTorch 2.x with CUDA, NVIDIA GPU (SM 7.0+)
+**Requirements**: Python 3.10+, PyTorch 2.x with CUDA, NVIDIA GPU (SM 7.0+, tested on RTX 2080 SM 7.5 and H100 SXM SM 9.0)
 
 No CMake or separate build step needed — uses PyTorch JIT compilation.
 
 ```bash
-# Run forward pass tests
+# Run forward pass tests (16 tests: V1, V2, V4, V5 × 4 configs)
 python tests/test_forward.py
 
-# Run backward pass tests
+# Run backward pass tests (9 tests: V3, V4, V5 × 3 configs)
 python tests/test_backward.py
 
 # Run benchmarks
@@ -52,7 +54,7 @@ csrc/
   bindings.cpp                # pybind11 module exposing all kernels to Python
 
 tests/
-  test_forward.py             # Verify forward against torch SDPA
+  test_forward.py             # Verify forward against torch SDPA (25 tests)
   test_backward.py            # Verify gradients against torch.autograd
 
 benchmarks/
@@ -91,6 +93,77 @@ dQ, dK, dV = flash_attn.flash_backward_optimised(Q, K, V, O, dO, L) # V4
 O, L = flash_attn.flash_forward_fp16_tc(Q, K, V)                  # V5
 dQ, dK, dV = flash_attn.flash_backward_fp16_tc(Q, K, V, O, dO, L) # V5
 ```
+
+## Correctness
+
+All **25 tests passing** on both RTX 2080 and H100:
+
+| Version | Forward | Backward | Max Error | Test Tolerance |
+|---------|---------|----------|-----------|----------------|
+| V1 Naive | 4/4 | — | < 1e-6 | atol=1e-4 |
+| V2 Flash | 4/4 | — | < 1e-6 | atol=1e-4 |
+| V3 Flash | — | 3/3 | < 1e-5 | atol=1e-3 |
+| V4 Optimised | 4/4 | 3/3 | < 1e-5 | atol=1e-3 |
+| V5 fp16 TC | 4/4 | 3/3 | < 2e-3 fwd, < 4e-3 bwd (fp16) | atol=1e-2 |
+
+## Benchmark Results (RTX 2080, SM 7.5)
+
+### Forward Pass (ms)
+
+| Config (B,nh,N,d) | PyTorch SDPA | PyTorch Naive | V1 Naive | V2 Flash | V4 Optimised | V5 fp16 TC | vs SDPA |
+|--------------------|-------------|---------------|----------|----------|--------------|------------|---------|
+| 1,1,64,32 | 0.016 | 0.024 | 0.186 | 0.133 | 0.016 | **0.012** | 0.8x |
+| 2,4,128,64 | 0.030 | 0.047 | 1.547 | 0.614 | 0.054 | **0.029** | 1.0x |
+| 4,8,256,64 | 0.119 | 0.268 | 8.777 | 3.360 | 0.395 | **0.127** | 1.1x |
+| 4,8,512,64 | 0.297 | 1.047 | 35.028 | 11.760 | 1.409 | **0.487** | 1.6x |
+| 4,8,1024,64 | 1.056 | 4.439 | 224.701 | 43.464 | 5.566 | **1.816** | 1.7x |
+| 4,8,2048,64 | 4.162 | 18.108 | — | 166.905 | 22.102 | **7.026** | 1.7x |
+
+### Backward Pass (ms)
+
+| Config (B,nh,N,d) | PyTorch Bwd | V3 Flash | V4 Optimised | V5 fp16 TC | vs PyTorch |
+|--------------------|------------|----------|--------------|------------|------------|
+| 1,1,64,32 | 0.049 | 0.785 | 0.034 | **0.042** | 0.9x |
+| 2,4,128,64 | 0.114 | 5.569 | 0.115 | **0.095** | 0.8x |
+| 4,8,256,64 | 0.649 | 21.735 | 0.906 | **0.414** | 0.6x |
+| 4,8,512,64 | 2.166 | 85.908 | 3.277 | **1.539** | 0.7x |
+| 4,8,1024,64 | 6.733 | 340.837 | 13.274 | **5.713** | 0.8x |
+| 4,8,2048,64 | 23.268 | 1368.716 | 50.990 | **22.323** | 1.0x |
+
+### Key Takeaways (RTX 2080)
+
+- **V5 forward** within **1.7x of PyTorch SDPA** at N=1024–2048
+- **V5 backward** matches PyTorch autograd at N=2048 (1.0x)
+- **V4→V5 speedup**: 3.1x forward, 2.3x backward (from fp16 bandwidth + tensor core matmuls)
+
+> Small configs (N≤128) are dominated by kernel launch overhead; meaningful performance comparisons start at N≥256.
+
+
+## Optimization Techniques by Version
+
+### V4: Collaborative Matmul + Split Backward
+- **Collaborative matmul**: 8 threads per query row (TPR=D/8), split-K dot products with warp shuffle reductions
+- **Split backward**: separate dK/dV and dQ kernels — dK/dV parallelizes over KV blocks, dQ parallelizes over query blocks, zero atomicAdd operations
+- **float4 vectorized loads**: 128-bit memory transactions for global→register transfers
+- **256 threads/block** (8 warps) for high SM occupancy
+
+### V5: fp16 + Tensor Cores
+- **WMMA 16×16×16**: tensor core matmuls for S=Q@K^T and O+=P@V in forward kernel
+- **Online softmax rescaling**: O accumulated in shared memory (fp32), rescale factors stored per-row before mi is updated, accumulator loaded into WMMA fragments via `load_matrix_sync`
+- **D-tile splitting**: each warp handles non-overlapping output columns, eliminating redundant computation
+- **fp16 I/O, fp32 accumulation**: halves memory bandwidth while maintaining numerical stability
+- **4 warps (128 threads)**: 2×2 tile arrangement for 32×32 block with 16×16 WMMA tiles
+
+## TODO
+
+- [ ] Double buffering (overlap compute with memory loads)
+- [ ] Swizzled shared memory layout to reduce bank conflicts
+- [ ] cp.async for global→shared memory copies (SM 8.0+)
+
+## References
+
+- Dao et al., [FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness](https://arxiv.org/abs/2205.14135), NeurIPS 2022
+- Dao, [FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning](https://arxiv.org/abs/2307.08691), 2023
 
 ## License
 
