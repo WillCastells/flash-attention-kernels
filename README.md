@@ -138,6 +138,38 @@ All **25 tests passing** on both RTX 2080 and H100:
 
 > Small configs (N≤128) are dominated by kernel launch overhead; meaningful performance comparisons start at N≥256.
 
+## Benchmark Results (H100 SXM, SM 9.0)
+
+### Forward Pass (ms)
+
+| Config (B,nh,N,d) | PyTorch SDPA | PyTorch Naive | V1 Naive | V2 Flash | V4 Optimised | V5 fp16 TC | vs SDPA |
+|--------------------|-------------|---------------|----------|----------|--------------|------------|---------|
+| 1,1,64,32 | 0.019 | 0.065 | 0.218 | 0.109 | 0.017 | **0.016** | 0.8x |
+| 2,4,128,64 | 0.026 | 0.068 | 1.033 | 0.410 | 0.037 | **0.028** | 1.1x |
+| 4,8,256,64 | 0.040 | 0.074 | 3.740 | 0.969 | 0.088 | **0.051** | 1.3x |
+| 4,8,512,64 | 0.086 | 0.173 | 14.691 | 2.793 | 0.255 | **0.119** | 1.4x |
+| 4,8,1024,64 | 0.229 | 0.580 | 58.042 | 8.189 | 0.840 | **0.350** | 1.5x |
+| 4,8,2048,64 | 0.699 | 2.510 | — | 28.027 | 3.032 | **1.169** | 1.7x |
+
+### Backward Pass (ms)
+
+| Config (B,nh,N,d) | PyTorch Bwd | V3 Flash | V4 Optimised | V5 fp16 TC | vs PyTorch |
+|--------------------|------------|----------|--------------|------------|------------|
+| 1,1,64,32 | 0.140 | 0.666 | 0.044 | **0.046** | 0.3x |
+| 2,4,128,64 | 0.245 | 4.534 | 0.101 | **0.093** | 0.4x |
+| 4,8,256,64 | 0.314 | 17.462 | 0.232 | **0.182** | 0.6x |
+| 4,8,512,64 | 0.432 | 68.603 | 0.632 | **0.390** | 0.9x |
+| 4,8,1024,64 | 0.925 | 273.771 | 1.811 | **1.159** | 1.3x |
+| 4,8,2048,64 | 2.432 | 1094.800 | 6.790 | **4.164** | 1.7x |
+
+### Key Takeaways (H100)
+
+- **V5 forward** within **1.5x of PyTorch SDPA** at N=1024, **1.7x** at N=2048
+- **V5 backward** within **1.7x of PyTorch autograd** at N=2048
+- **H100 vs RTX 2080** (V5 at N=2048): **6.0x** faster forward, **5.4x** faster backward
+- Tensor core benefits scale with sequence length — at small N, fp16 conversion overhead dominates; at N≥512 the bandwidth and compute savings take over
+
+> "vs SDPA" / "vs PyTorch" columns show the ratio V5 time / PyTorch time. Values < 1.0x mean V5 is faster.
 
 ## Optimization Techniques by Version
 
@@ -153,17 +185,6 @@ All **25 tests passing** on both RTX 2080 and H100:
 - **D-tile splitting**: each warp handles non-overlapping output columns, eliminating redundant computation
 - **fp16 I/O, fp32 accumulation**: halves memory bandwidth while maintaining numerical stability
 - **4 warps (128 threads)**: 2×2 tile arrangement for 32×32 block with 16×16 WMMA tiles
-
-## TODO
-
-- [ ] Double buffering (overlap compute with memory loads)
-- [ ] Swizzled shared memory layout to reduce bank conflicts
-- [ ] cp.async for global→shared memory copies (SM 8.0+)
-
-## References
-
-- Dao et al., [FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness](https://arxiv.org/abs/2205.14135), NeurIPS 2022
-- Dao, [FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning](https://arxiv.org/abs/2307.08691), 2023
 
 ## License
 
