@@ -1,6 +1,5 @@
 # Flash Attention 2 in CUDA — From Scratch
 
-> V5 forward within 1.7x of PyTorch SDPA, backward within 1.7x of PyTorch autograd on H100. Full forward + backward pass with fp16 tensor cores — few open-source implementations include both.
 
 A from-scratch CUDA implementation of Flash Attention 2 with **forward AND backward pass**, progressively optimized from naive baseline to fp16 tensor core kernels.
 
@@ -185,6 +184,17 @@ All **25 tests passing** on both RTX 2080 and H100:
 - **D-tile splitting**: each warp handles non-overlapping output columns, eliminating redundant computation
 - **fp16 I/O, fp32 accumulation**: halves memory bandwidth while maintaining numerical stability
 - **4 warps (128 threads)**: 2×2 tile arrangement for 32×32 block with 16×16 WMMA tiles
+
+## TODO
+
+- [ ] Double buffering (overlap compute with memory loads)
+- [ ] Swizzled shared memory layout to reduce bank conflicts
+- [ ] cp.async for global→shared memory copies (SM 8.0+)
+
+## References
+
+- Dao et al., [FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness](https://arxiv.org/abs/2205.14135), NeurIPS 2022
+- Dao, [FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning](https://arxiv.org/abs/2307.08691), 2023
 
 ## License
 
