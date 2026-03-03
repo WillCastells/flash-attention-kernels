@@ -1,5 +1,6 @@
 # Flash Attention 2 in CUDA — From Scratch
 
+> V5 forward within 1.7x of PyTorch SDPA, backward within 1.7x of PyTorch autograd on H100. Full forward + backward pass with fp16 tensor cores — few open-source implementations include both.
 
 A from-scratch CUDA implementation of Flash Attention 2 with **forward AND backward pass**, progressively optimized from naive baseline to fp16 tensor core kernels.
 
