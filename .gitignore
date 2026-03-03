@@ -17,8 +17,7 @@ torch_extensions/
 *.swp
 *.swo
 
-# Benchmark results (keep CSVs, ignore large files)
-benchmarks/results/*.png
+# Benchmark results
 
 # OS
 Thumbs.db
